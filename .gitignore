@@ -1,0 +1,9 @@
+.vs/
+*.idb
+*.pdb
+*.obj
+*.tlog
+*.ilk
+*.recipe
+*.log
+*.pch

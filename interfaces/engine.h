@@ -9,4 +9,7 @@ public:
 	{
 		return Memory::Call<std::int32_t>(this, 12);
 	}
+	constexpr void ExecuteCmd(const char* cmd) noexcept {
+		return Memory::Call<void>(this, 114, cmd);
+	}
 };

@@ -14,17 +14,26 @@
 class Onetap {
 public:
 	uintptr_t allocBase = 0;
-	CColor* background;
-	CColor* elementsOutline;
-	CColor* mainAccent;
-	CColor* groupShadows;
-	CColor* checkboxBackground;
-	CColor* checkboxText;
-	CColor* checkboxOutline;
-	CColor* checkboxActiveColor;
+	struct Colors {
+		CColor* background;
+		CColor* elementsOutline;
+		CColor* mainAccent;
+		CColor* groupShadows;
+		CColor* checkboxBackground;
+		CColor* checkboxText;
+		CColor* checkboxOutline;
+		CColor* checkboxActiveColor;
 
-	CColor* accentColor1;
-	CColor* accentColor2;
+		CColor* accentColor1;
+		CColor* accentColor2;
+	} colors;
+	struct AutoPeek {
+		bool active;
+		bool retreating;
+		char pad[2];
+		Vector pos;
+	}* autopeek;
+
 
 	static uintptr_t findAllocBase() {
 		SYSTEM_INFO si;
@@ -54,18 +63,21 @@ public:
 		Console::success("AllocBase: 0x%p", (void*)address);
 		allocBase = address;
 
-		background = (CColor*)(allocBase + 0x84F830);
-		elementsOutline = (CColor*)((uintptr_t)background + 4);
-		mainAccent = (CColor*)((uintptr_t)elementsOutline + 4);
-		groupShadows = (CColor*)(allocBase + 0x84FAE8);
+		colors.background = (CColor*)(allocBase + 0x84F830);
+		colors.elementsOutline = (CColor*)((uintptr_t)colors.background + 4);
+		colors.mainAccent = (CColor*)((uintptr_t)colors.elementsOutline + 4);
+		colors.groupShadows = (CColor*)(allocBase + 0x84FAE8);
 
-		checkboxBackground = (CColor*)(allocBase + 0x84F768);
-		checkboxText = (CColor*)(allocBase + 0x84F770);
-		checkboxOutline = (CColor*)((uintptr_t)checkboxText + 4);
-		checkboxActiveColor = (CColor*)((uintptr_t)checkboxOutline + 4);
+		colors.checkboxBackground = (CColor*)(allocBase + 0x84F768);
+		colors.checkboxText = (CColor*)(allocBase + 0x84F770);
+		colors.checkboxOutline = (CColor*)((uintptr_t)colors.checkboxText + 4);
+		colors.checkboxActiveColor = (CColor*)((uintptr_t)colors.checkboxOutline + 4);
 
-		accentColor1 = (CColor*)(allocBase + 0x37201);
-		accentColor2 = (CColor*)(allocBase + 0x108A524);
+		colors.accentColor1 = (CColor*)(allocBase + 0x37201);
+		colors.accentColor2 = (CColor*)(allocBase + 0x108A524);
+
+
+		autopeek = (AutoPeek*)(allocBase + 0x866F00);
 
 		return true;
 	}
@@ -80,6 +92,8 @@ namespace OnetapHooks {
 		const uintptr_t slideWalkEnabled = 0xBC30F4;
 		const uintptr_t animFix = 0x33180;
 		const uintptr_t printColor = 0x143180;
+		const uintptr_t autoPeekRender = 0x1173C0;
+		const uintptr_t PaintTraverse = 0x14D560;
 	}
 	namespace Originals {
 		using SlideWalk_t = void(__fastcall*)(UserCmd* cmd);
@@ -90,6 +104,10 @@ namespace OnetapHooks {
 		vsprintf_s_t vsprintf_s_fn = nullptr;
 		using PrintColor_t = void(__cdecl*)(void*, const CColor&, const char*, ...);
 		PrintColor_t PrintColor = nullptr;
+		using AutoPeekRender_t = int(*)();
+		AutoPeekRender_t autoPeekRender = nullptr;
+		using PaintTraverse_t = int(__fastcall*)(const char*, int, int);
+		PaintTraverse_t PaintTraverse = nullptr;
 	}
 
 	void __fastcall slideWalk(UserCmd* cmd) {
@@ -161,34 +179,34 @@ namespace OnetapHooks {
 				switch (str2int(id.c_str()))
 				{
 					case str2int("Background"):
-						*g_Onetap.background = col;
+						*g_Onetap.colors.background = col;
 						break;
 					case str2int("Elements Outline"):
-						*g_Onetap.elementsOutline = col;
+						*g_Onetap.colors.elementsOutline = col;
 						break;
 					case str2int("Accent 1"):
-						*g_Onetap.mainAccent = col;
+						*g_Onetap.colors.mainAccent = col;
 						break;
 					case str2int("Accent 2"):
-						*g_Onetap.accentColor1 = col;
+						*g_Onetap.colors.accentColor1 = col;
 						break;
 					case str2int("Accent 3"):
-						*g_Onetap.accentColor2 = col;
+						*g_Onetap.colors.accentColor2 = col;
 						break;
 					case str2int("Scroll Shadows"):
-						*g_Onetap.groupShadows = col;
+						*g_Onetap.colors.groupShadows = col;
 						break;
 					case str2int("Checkbox Background"):
-						*g_Onetap.checkboxBackground = col;
+						*g_Onetap.colors.checkboxBackground = col;
 						break;
 					/*case str2int("Checkbox Text"):
 						*g_Onetap.checkboxText = col;
 						break;*/
 					case str2int("Checkbox Outline"):
-						*g_Onetap.checkboxOutline = col;
+						*g_Onetap.colors.checkboxOutline = col;
 						break;
 					case str2int("Checkbox Active Color"):
-						*g_Onetap.checkboxActiveColor = col;
+						*g_Onetap.colors.checkboxActiveColor = col;
 						break;
 				default:
 					break;
@@ -197,6 +215,29 @@ namespace OnetapHooks {
 			return;
 		}
 		return Originals::PrintColor(thisptr, color, format, va);
+	}
+	int autoPeekRender() {
+		return 0;
+	}
+	int __fastcall PaintTraverse(const char* a1, int a2, int a3) {
+		int result = Originals::PaintTraverse(a1, a2, a3);
+		auto x = cvar->CheckAndGetVar("autopeek_pos_x");
+		auto y = cvar->CheckAndGetVar("autopeek_pos_y");
+		auto z = cvar->CheckAndGetVar("autopeek_pos_z");
+		auto active = cvar->CheckAndGetVar("autopeek_active");
+		auto retreating = cvar->CheckAndGetVar("autopeek_retreating");
+		if (x == nullptr
+			|| y == nullptr
+			|| z == nullptr
+			|| retreating == nullptr
+			|| active == nullptr)
+			return result;
+		x->SetFloat(g_Onetap.autopeek->pos.x);
+		y->SetFloat(g_Onetap.autopeek->pos.y);
+		z->SetFloat(g_Onetap.autopeek->pos.z);
+		active->SetInt(g_Onetap.autopeek->active);
+		retreating->SetInt(g_Onetap.autopeek->retreating);
+		return result;
 	}
 	void processHooks() {
 		MH_Initialize();
@@ -211,6 +252,18 @@ namespace OnetapHooks {
 			&OnetapHooks::animFix,
 			(LPVOID*)&OnetapHooks::Originals::animFix,
 			"Local Player AnimFix"
+		);
+		Memory::Hook(
+			(LPVOID)(g_Onetap.allocBase + OnetapHooks::Addresses::autoPeekRender),
+			&OnetapHooks::autoPeekRender,
+			(LPVOID*)&OnetapHooks::Originals::autoPeekRender,
+			"Auto Peek Render"
+		);
+		Memory::Hook(
+			(LPVOID)(g_Onetap.allocBase + OnetapHooks::Addresses::PaintTraverse),
+			&OnetapHooks::PaintTraverse,
+			(LPVOID*)&OnetapHooks::Originals::PaintTraverse,
+			"Paint Traverse"
 		);
 		if (auto ucrtbase = GetModuleHandle("ucrtbase.dll"); ucrtbase) {
 			Memory::Hook(
@@ -231,7 +284,7 @@ namespace OnetapHooks {
 
 		Console::success("Successfuly hooked all functions!");
 
-		cvar->PrintColor(CColor(0, 255, 0), "[+] configur8 initialized!\n");
+		cvar->PrintColor(CColor(0, 222, 0), "[+] configur8 initialized!\n");
 	}
 	void unhook() {
 		cvar->PrintColor(CColor(255, 0, 0), "[-] configur8 unloaded!\n");

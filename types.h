@@ -2,9 +2,16 @@
 #include <cstdint>
 #include "memory.h"
 
-struct Vector
+class Vector
 {
+public:
 	float x, y, z;
+
+	const char* str() {
+		static char buffer[25];
+		sprintf(buffer, "(%f, %f, %f)", x, y, z);
+		return buffer;
+	}
 };
 
 enum CommandButtons : int

@@ -15,6 +15,7 @@ DWORD WINAPI init(LPVOID instance) {
 	
 	if (g_Onetap.init()) {
 		Interfaces::init();
+		engine->ExecuteCmd("setinfo configur8_init 1");
 		OnetapHooks::processHooks();
 
 		//Sleep(3000);
